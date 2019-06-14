@@ -1,0 +1,15 @@
+.dub
+docs.json
+__dummy.html
+docs/
+/initgl
+initgl.so
+initgl.dylib
+initgl.dll
+initgl.a
+initgl.lib
+initgl-test-*
+*.exe
+*.o
+*.obj
+*.lst
