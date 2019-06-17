@@ -5,6 +5,9 @@
 		"bindbc-loader": "0.1.1",
 		"bindbc-opengl": "0.5.0",
 		"derelict-gl3": "2.0.0-beta.8",
-		"derelict-util": "3.0.0-beta.2"
+		"derelict-util": "3.0.0-beta.2",
+		"gl3n": "1.3.1",
+		"imaged": "1.0.2",
+		"undead": "1.0.10"
 	}
 }

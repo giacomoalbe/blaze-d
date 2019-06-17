@@ -1,14 +1,16 @@
 {
-	"authors": [
-		"giacomo"
-	],
-	"copyright": "Copyright © 2019, giacomo",
-	"description": "A minimal D application.",
-	"license": "GPL3",
-	"name": "initgl",
+  "authors": [
+    "giacomo"
+  ],
+  "copyright": "Copyright © 2019, giacomo",
+  "description": "A minimal D application.",
+  "license": "GPL3",
+  "name": "initgl",
   "dependencies": {
+    "imaged": "~>1.0.2",
     "bindbc-glfw": "~>0.1.0",
-    "bindbc-opengl": "~>0.5.0"
+    "bindbc-opengl": "~>0.5.0",
+    "gl3n": "~>1.3.1"
   },
   "versions": [
     "GL_46"
