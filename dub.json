@@ -7,11 +7,14 @@
   "license": "GPL3",
   "name": "initgl",
   "dependencies": {
-    "imaged": "~>1.0.2"
+    "imaged": "~>1.0.2",
+    "gl3n": "~>1.3.1"
   },
   "sourceFiles": [
     "include/glcore.d",
-    "source/canvas.d"
+
+    "source/Canvas.d",
+    "source/BlazeWindow.d"
   ],
   "importPaths": [
     "GtkD/generated/gtkd"

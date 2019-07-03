@@ -3,7 +3,21 @@ import std.conv;
 import std.stdio;
 import std.string;
 
-/*
+import gl3n.math;
+import gl3n.util;
+import gl3n.linalg;
+
+import core.time;
+import glib.Timeout;
+
+import gdk.GLContext;
+
+import gtk.Widget;
+import gtk.GLArea;
+
+import glcore;
+import imaged;
+
 struct Texture {
   GLuint id;
   GLuint unit;
@@ -32,8 +46,8 @@ class ShaderProgram {
     vertexShaderFile.close();
     fragmentShaderFile.close();
 
-    auto vertexShaderSrc = toStringz(vertexShaderFileContent);
-    auto fragmentShaderSrc = toStringz(fragmentShaderFileContent);
+    const(char)* vertexShaderSrc = vertexShaderFileContent.ptr;
+    const(char)* fragmentShaderSrc = fragmentShaderFileContent.ptr;
 
     this.shaders["vertex"] = glCreateShader(GL_VERTEX_SHADER);
     glShaderSource(shaders["vertex"], 1, &vertexShaderSrc, null);
@@ -163,6 +177,11 @@ class ShaderProgram {
     }
   }
 
+  void setTransform(mat4 transform) {
+    auto transformUniformId = glGetUniformLocation(this.id, "transform");
+    glUniformMatrix4fv(transformUniformId, 1, GL_FALSE, transform.value_ptr);
+  }
+
   void renderTexture() {
     foreach(i, tex; this.textures) {
       this.setInt("tex" ~ to!string(i), cast(int)i);
@@ -173,32 +192,48 @@ class ShaderProgram {
   }
 }
 
-class Canvas {
-  GLFWwindow* window;
-  int width, height, NUM_TRIS;
-  string title;
+class Canvas : GLArea {
   GLuint[] vaos, vbos, elements;
   GLuint[string] shaders;
   ShaderProgram shaderProgram;
+  int NUM_TRIS;
+  uint renderTickCounter;
+  Timeout renderTick;
+  float mixFactor;
+  mat4 transform, scale, rotation;
 
   float[] vertices;
 
-  this(int width, int height, string title) {
-    this.width = width;
-    this.height = height;
-    this.title = title;
+  this() {
+    setAutoRender(true);
+
+    setSizeRequest(300,300);
+    setHexpand(true);
+    setVexpand(true);
+
+    addOnRender(&render);
+    addOnRealize(&realize);
+    addOnUnrealize(&unrealize);
+
+    mixFactor = 0.0f;
+
+    transform = mat4.identity();
+    scale = mat4.identity();
+    rotation = mat4.identity();
+
+    showAll();
+
     this.NUM_TRIS = 1;
-
-    writefln("Creating canvas with W: %d H: %d Title: %s", width, height, title);
-
-    initGL();
-
-    this.shaderProgram = new ShaderProgram("shaders/vertex.glsl", "shaders/fragment.glsl");
-
-    initEventHandling();
   }
 
-  ~this() {
+  void realize(Widget) {
+    makeCurrent();
+    initGraphics();
+  }
+
+  void unrealize(Widget) {
+    makeCurrent();
+
     foreach(vboId; this.vbos) {
       writeln("Deleting VBO: ", vboId);
       glDeleteBuffers(1, &vboId);
@@ -208,97 +243,54 @@ class Canvas {
       writeln("Deleting VAO: ", vaoId);
       glDeleteVertexArrays(1, &vaoId);
     }
-
-    glfwTerminate();
   }
 
-  extern (C) static void onWindowRezize(GLFWwindow *window, int width, int height) nothrow {
-    try {
-      glViewport(0, 0, width, height);
-    } catch (Exception e) {
-    }
+  bool render(GLContext ctx, GLArea a) {
+    makeCurrent();
+
+    drawCanvas();
+
+    glFlush();
+
+    return true;
   }
 
-  extern (C) static void onKeyPress(GLFWwindow *window, int key, int scancode, int action, int mods) nothrow {
-    try {
-      if (action == GLFW_PRESS) {
-        switch (key) {
-          case GLFW_KEY_ESCAPE:
-          case GLFW_KEY_Q:
-            glfwSetWindowShouldClose(window, true);
-            break;
-
-          case GLFW_KEY_A:
-            writeln("Adding cube: ");
-            break;
-
-          case GLFW_KEY_H:
-            writeln("Getting help: ");
-            break;
-
-          default:
-            writeln("Pressed key: ", key, scancode, action);
-        }
-      }
-    } catch (Exception e) {
-    }
+  void setMixFactor(float mixFactor) {
+    this.mixFactor = mixFactor;
+    this.queueDraw();
   }
 
-  void initEventHandling() {
-    glfwSetWindowSizeCallback(this.window, &onWindowRezize);
-    glfwSetKeyCallback(this.window, &onKeyPress);
+  void setScale(float factor) {
+    this.scale = mat4.identity().scale(factor, factor, factor);
+    this.updateTransform();
   }
 
-  void render() {
+  void setRotation(float factor) {
+    this.rotation = mat4.identity().rotatex(radians(factor));
+    this.updateTransform();
+  }
+
+  void updateTransform() {
+    this.transform = this.rotation * this.scale;
+    this.queueDraw();
+  }
+
+  void drawCanvas() {
     // glDrawArrays(GL_TRIANGLES, 0, 6);
     glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
     glBindVertexArray(this.vaos[0]);
 
-    float timeValue = glfwGetTime();
-    float sinValue = (sin(timeValue * 2) / 2.0f) + 0.5f;
+    //float sinValue = (sin(cast(float) this.renderTickCounter * 2000) / 2.0f) + 0.5f;
 
     this.shaderProgram.renderTexture();
 
     this.shaderProgram.use();
-    this.shaderProgram.setFloat("mixFactor", [sinValue]);
+    this.shaderProgram.setFloat("mixFactor", [this.mixFactor]);
+    this.shaderProgram.setTransform(this.transform);
 
     //glDrawArrays(GL_TRIANGLES, 0, this.NUM_TRIS * 3);
     glDrawElements(GL_TRIANGLES, 3 * this.NUM_TRIS, GL_UNSIGNED_INT, cast(void*) 0);
-  }
-
-  void initGL() {
-    loadGLFW();
-
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
-    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-    glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
-
-    glfwWindowHint(GLFW_RESIZABLE, GL_FALSE);
-
-    glfwInit();
-
-    this.window = glfwCreateWindow(
-        this.width,
-        this.height,
-        toStringz(this.title),
-        null,
-        null
-        );
-
-    glfwMakeContextCurrent(window);
-
-    auto loadOpenGLStatus = loadOpenGL();
-
-    switch (loadOpenGLStatus) {
-      case GLSupport.noContext:
-        writeln("No context provided");
-        break;
-
-      default:
-        writeln("OpenGL version loaded: ", loadOpenGLStatus);
-    }
   }
 
   void generateGeomtry() {
@@ -315,6 +307,8 @@ class Canvas {
   }
 
   void initGraphics() {
+    this.shaderProgram = new ShaderProgram("shaders/vertex.glsl", "shaders/fragment.glsl");
+
     GLuint vao, vbo, ebo;
 
     // VAO
@@ -365,26 +359,4 @@ class Canvas {
     glBindBuffer(GL_ARRAY_BUFFER, this.vbos[0]);
     glBindVertexArray(this.vaos[0]);
   }
-
-  void loop() {
-    initGraphics();
-
-    while (!glfwWindowShouldClose(window)) {
-      glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
-      glClear(GL_COLOR_BUFFER_BIT);
-
-      render();
-
-      glfwSwapBuffers(window);
-      glfwPollEvents();
-    }
-  }
 }
-
-int main() {
-  Canvas canvas = new Canvas(800, 600, "Canvas");
-  canvas.loop();
-
-  return 0;
-}
-*/
