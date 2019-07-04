@@ -15,7 +15,7 @@ import Canvas;
 
 class BlazeWindow : MainWindow {
   this(int width, int height) {
-    super("GtkD: BindBC OpenGL");
+    super("Blaze");
 
     CssProvider cssProvider = new CssProvider();
     cssProvider.loadFromPath("assets/style.css");

@@ -11,6 +11,7 @@ import core.time;
 import glib.Timeout;
 
 import gdk.GLContext;
+import gdk.Event;
 
 import gtk.Widget;
 import gtk.GLArea;
@@ -21,6 +22,32 @@ import imaged;
 struct Texture {
   GLuint id;
   GLuint unit;
+}
+
+mat4 generateFrustum(float l, float r, float t, float b, float n, float f) {
+  mat4 M;
+
+  M[0][0] = 2 / (r - l);
+  M[0][1] = 0;
+  M[0][2] = 0;
+  M[0][3] = 0;
+
+  M[1][0] = 0;
+  M[1][1] = 2 / (t - b);
+  M[1][2] = 0;
+  M[1][3] = 0;
+
+  M[2][0] = 0;
+  M[2][1] = 0;
+  M[2][2] = -2 / (f - n);
+  M[2][3] = 0;
+
+  M[3][0] = -(r + l) / (r - l);
+  M[3][1] = -(t + b) / (t - b);
+  M[3][2] = -(f + n) / (f - n);
+  M[3][3] = 1;
+
+  return M;
 }
 
 class ShaderProgram {
@@ -182,6 +209,17 @@ class ShaderProgram {
     glUniformMatrix4fv(transformUniformId, 1, GL_FALSE, transform.value_ptr);
   }
 
+  void setTransformationMatrix(mat4 p, mat4 v, mat4 m) {
+    auto transformUniformId = glGetUniformLocation(this.id, "projection");
+    glUniformMatrix4fv(transformUniformId, 1, GL_FALSE, p.value_ptr);
+
+    transformUniformId = glGetUniformLocation(this.id, "view");
+    glUniformMatrix4fv(transformUniformId, 1, GL_FALSE, v.value_ptr);
+
+    transformUniformId = glGetUniformLocation(this.id, "model");
+    glUniformMatrix4fv(transformUniformId, 1, GL_FALSE, m.value_ptr);
+  }
+
   void renderTexture() {
     foreach(i, tex; this.textures) {
       this.setInt("tex" ~ to!string(i), cast(int)i);
@@ -196,11 +234,11 @@ class Canvas : GLArea {
   GLuint[] vaos, vbos, elements;
   GLuint[string] shaders;
   ShaderProgram shaderProgram;
-  int NUM_TRIS;
+  int NUM_TRIS, width, height;
   uint renderTickCounter;
   Timeout renderTick;
   float mixFactor;
-  mat4 transform, scale, rotation;
+  mat4 transform, scale, rotation, view, perspective, model;
 
   float[] vertices;
 
@@ -214,6 +252,9 @@ class Canvas : GLArea {
     addOnRender(&render);
     addOnRealize(&realize);
     addOnUnrealize(&unrealize);
+    addOnResize(&resize);
+    addOnButtonPress(&click);
+    addOnMotionNotify(&hover);
 
     mixFactor = 0.0f;
 
@@ -221,9 +262,30 @@ class Canvas : GLArea {
     scale = mat4.identity();
     rotation = mat4.identity();
 
+    model = mat4.identity();
+    view = mat4.translation(vec3(0.0f, 0.0f, -0.4f));
+    perspective = mat4.identity();
+
     showAll();
 
     this.NUM_TRIS = 1;
+  }
+
+  bool click(Event event, Widget widget) {
+    writeln("click");
+    return true;
+  }
+
+  bool hover(Event event, Widget widget) {
+    writeln(cast(int) event.motion.x);
+    return true;
+  }
+
+  void resize(int newWidth, int newHeight, GLArea area) {
+    this.width = newWidth;
+    this.height = newHeight;
+
+    this.perspective = generateFrustum(0.0f, this.width, 0.0f, this.height, -1.0f, 1.0f);
   }
 
   void realize(Widget) {
@@ -261,17 +323,15 @@ class Canvas : GLArea {
   }
 
   void setScale(float factor) {
-    this.scale = mat4.identity().scale(factor, factor, factor);
+    this.view = mat4.identity().scale(factor, factor, factor);
     this.updateTransform();
   }
 
   void setRotation(float factor) {
-    this.rotation = mat4.identity().rotatex(radians(factor));
     this.updateTransform();
   }
 
   void updateTransform() {
-    this.transform = this.rotation * this.scale;
     this.queueDraw();
   }
 
@@ -287,7 +347,7 @@ class Canvas : GLArea {
 
     this.shaderProgram.use();
     this.shaderProgram.setFloat("mixFactor", [this.mixFactor]);
-    this.shaderProgram.setTransform(this.transform);
+    this.shaderProgram.setTransformationMatrix(this.perspective, this.view, this.model);
 
     //glDrawArrays(GL_TRIANGLES, 0, this.NUM_TRIS * 3);
     glDrawElements(GL_TRIANGLES, 3 * this.NUM_TRIS, GL_UNSIGNED_INT, cast(void*) 0);
@@ -295,10 +355,10 @@ class Canvas : GLArea {
 
   void generateGeomtry() {
     //               [  x      y     r     g     b     s     t  ]
-    this.vertices ~= [-0.9f, -0.9f, 1.0f, 1.0f, 1.0f, 0.0f, 0.0f]; // SW
-    this.vertices ~= [-0.9f,  0.9f, 1.0f, 1.0f, 1.0f, 0.0f, 3.0f]; // NW
-    this.vertices ~= [ 0.9f,  0.9f, 0.0f, 0.0f, 0.0f, 2.0f, 3.0f]; // NE
-    this.vertices ~= [ 0.9f, -0.9f, 0.0f, 0.0f, 0.0f, 2.0f, 0.0f]; // SE
+    this.vertices ~= [  200.0f,  200.0f, 1.0f, 1.0f, 1.0f, 0.0f, 0.0f]; // SW
+    this.vertices ~= [  500.0f,  200.0f, 1.0f, 1.0f, 1.0f, 0.0f, 1.0f]; // NW
+    this.vertices ~= [  500.0f,  500.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f]; // NE
+    this.vertices ~= [  200.0f,  500.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f]; // SE
 
     this.elements ~= [0, 1, 3];
     this.elements ~= [1, 2, 3];
